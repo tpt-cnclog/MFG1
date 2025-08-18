@@ -1239,10 +1239,21 @@ function submitLog(data) {
           console.log('🔄 Starting CLOSE operation for row:', i + 1);
           
           try {
-            // Capture end time and employee code
+            // Capture end time and employee code with debugging
             const endTime = new Date();
             const endEmployeeCode = data.employeeCode || "";
             const startTime = row[11] instanceof Date ? row[11] : new Date(row[11]);
+            
+            // DEBUG: Log critical variables for Machine Setting
+            console.log('🔍 CLOSE DEBUG INFO:', {
+              processName: row[6],
+              isMachineSetting: normalize(row[6]) === normalize('Machine Setting'),
+              endTime: endTime,
+              endTimeType: typeof endTime,
+              endTimeValid: endTime instanceof Date,
+              endTimeISO: endTime.toISOString(),
+              endEmployee: endEmployeeCode
+            });
             
             // Parse existing data with error handling
             let pauseTimes = [];
@@ -1313,9 +1324,13 @@ function submitLog(data) {
 
             // TRUE ATOMIC UPDATE - Single API call for ALL data (columns 13-28)
             const updateRange = sheet.getRange(i + 1, 13, 1, 16); // 16 columns: 13 to 28
+            
+            // Ensure endTime is a proper Date object (fix for Machine Setting issue)
+            const safeEndTime = endTime instanceof Date ? endTime : new Date(endTime);
+            
             const updateValues = [[
               endEmployeeCode,                                        // Column 13: End Employee
-              endTime,                                               // Column 14: End Time
+              safeEndTime,                                           // Column 14: End Time (validated)
               msToHHMMSSWithPlaceholder(processMs),                  // Column 15: Process Time
               fgValue,                                               // Column 16: FG
               ngValue,                                               // Column 17: NG
@@ -1332,13 +1347,94 @@ function submitLog(data) {
               msToHHMMSSWithPlaceholder(totalOtMs)                   // Column 28: OT Duration
             ]];
 
+            // DEBUG: Log the exact values being written for Machine Setting
+            console.log('📝 ATOMIC UPDATE DEBUG:', {
+              rowNumber: i + 1,
+              processName: row[6],
+              isMachineSetting: normalize(row[6]) === normalize('Machine Setting'),
+              originalEndTime: endTime,
+              safeEndTime: safeEndTime,
+              updateValues_preview: {
+                column13_endEmployee: updateValues[0][0],
+                column14_endTime: updateValues[0][1],
+                column14_endTime_type: typeof updateValues[0][1],
+                column14_endTime_valid: updateValues[0][1] instanceof Date,
+                column15_processTime: updateValues[0][2],
+                column19_status: updateValues[0][6]
+              }
+            });
+
+            // SPECIAL MACHINE SETTING DEBUG: Try individual cell write for end time
+            if (normalize(row[6]) === normalize('Machine Setting')) {
+              console.log('🔧 MACHINE SETTING SPECIAL DEBUG: Attempting individual end time write');
+              try {
+                const endTimeCell = sheet.getRange(i + 1, 14, 1, 1);
+                console.log('🔧 Writing safeEndTime directly to cell N' + (i + 1) + ':', safeEndTime);
+                endTimeCell.setValue(safeEndTime);
+                SpreadsheetApp.flush();
+                console.log('🔧 Individual end time write completed');
+                
+                // Verify the individual write
+                const verifyEndTime = endTimeCell.getValue();
+                console.log('🔧 Verification of individual write:', {
+                  writtenValue: verifyEndTime,
+                  valueType: typeof verifyEndTime,
+                  isEmpty: !verifyEndTime || verifyEndTime === ""
+                });
+              } catch (individualError) {
+                console.error('🔧 Individual end time write failed:', individualError);
+              }
+            }
+
             // SINGLE ATOMIC WRITE - All data written in one API call
             console.log('📝 Executing TRULY atomic write of 16 columns');
-            updateRange.setValues(updateValues);
+            try {
+              updateRange.setValues(updateValues);
+              console.log('✅ Atomic write successful');
+            } catch (writeError) {
+              console.error('❌ Atomic write failed:', writeError);
+              console.error('❌ Failed values:', updateValues);
+              throw new Error(`เกิดข้อผิดพลาดในการเขียนข้อมูล: ${writeError.message}`);
+            }
             
             // Single flush after the atomic write
             SpreadsheetApp.flush();
             console.log('✅ CLOSE operation completed successfully with atomic write');
+            
+            // VERIFICATION: Read back the data to confirm it was written correctly
+            try {
+              const verificationRange = sheet.getRange(i + 1, 13, 1, 7); // Check first 7 columns of the update
+              const writtenValues = verificationRange.getValues()[0];
+              console.log('🔍 VERIFICATION - Data written to sheet:', {
+                column13_endEmployee: writtenValues[0],
+                column14_endTime: writtenValues[1],
+                column15_processTime: writtenValues[2],
+                column16_fg: writtenValues[3],
+                column17_ng: writtenValues[4],
+                column18_rework: writtenValues[5],
+                column19_status: writtenValues[6],
+                endTimeCheck: writtenValues[1] ? 'END_TIME_SAVED' : 'END_TIME_MISSING'
+              });
+              
+              // SPECIAL MACHINE SETTING VERIFICATION
+              if (normalize(row[6]) === normalize('Machine Setting')) {
+                console.log('🔧 MACHINE SETTING END TIME SPECIFIC VERIFICATION:');
+                const endTimeOnly = sheet.getRange(i + 1, 14, 1, 1).getValue();
+                console.log('🔧 Direct end time cell read:', {
+                  cellValue: endTimeOnly,
+                  cellType: typeof endTimeOnly,
+                  cellEmpty: !endTimeOnly || endTimeOnly === "",
+                  cellString: String(endTimeOnly),
+                  cellDate: endTimeOnly instanceof Date ? endTimeOnly.toISOString() : 'NOT_A_DATE'
+                });
+                
+                // Check cell formatting
+                const cellFormat = sheet.getRange(i + 1, 14, 1, 1).getNumberFormat();
+                console.log('🔧 End time cell format:', cellFormat);
+              }
+            } catch (verifyError) {
+              console.error('⚠️ Verification failed:', verifyError);
+            }
             
             // Apply formatting with verification
             try {

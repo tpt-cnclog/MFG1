@@ -13,7 +13,7 @@ A Progressive Web App (PWA) for CNC job logging and management at TPT Manufactur
 
 ## Deployment
 
-This app is deployed on GitHub Pages at: [https://tpt-cnclog.github.io/cnc-webapp/](https://tpt-cnclog.github.io/cnc-webapp/)
+This app is deployed on GitHub Pages at: [https://tpt-cnclog.github.io/cnc-webapp/](https://tpt-cnclog.github.io/MFG1/)
 
 ## Structure
 
